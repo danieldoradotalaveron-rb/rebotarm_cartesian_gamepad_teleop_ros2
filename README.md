@@ -73,15 +73,23 @@ rebotarm_cartesian_gamepad_teleop_ros2/
 
 ## Testing
 
-With driver install sourced:
+**Unit tests** (no driver/SDK) — run in this repo's CI:
 
 ```bash
-cd rebotarm_cartesian_gamepad_teleop_ros2
-colcon test --packages-select rebotarm_cartesian_teleop
-colcon test-result --verbose
+cd src/rebotarm_cartesian_teleop
+source /opt/ros/jazzy/setup.bash
+export PYTHONPATH="${PWD}:${PWD}/rebotarm_cartesian_teleop${PYTHONPATH:+:${PYTHONPATH}}"
+python3 -m pytest test/unit -q
 ```
 
-Or from the driver fork: `just test-teleop`.
+**Integration tests** (driver fork, SDK, bringup, FK/IK) live in the driver fork
+at `integration/rebotarm_cartesian_teleop/test/`. With driver + overlay built:
+
+```bash
+just test-teleop-integration   # from driver fork root
+```
+
+Or `just test-teleop` for colcon unit test + integration in one go.
 
 ## License
 

@@ -1,0 +1,47 @@
+# Unit tests and lint for rebotarm_cartesian_teleop — no driver fork, SDK, or colcon.
+# Integration tests (rebotarm_msgs, bringup, reBotArm_control_py) run in the driver fork CI.
+
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/rebotarm_cartesian_teleop/**"
+      - ".github/workflows/ci.yml"
+  pull_request:
+    paths:
+      - "src/rebotarm_cartesian_teleop/**"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup ROS 2 Jazzy
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: jazzy
+
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pytest python3-numpy
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Pytest (unit)
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          cd src/rebotarm_cartesian_teleop
+          export PYTHONPATH="${PWD}:${PWD}/rebotarm_cartesian_teleop${PYTHONPATH:+:${PYTHONPATH}}"
+          python3 -m pytest test/unit -q
