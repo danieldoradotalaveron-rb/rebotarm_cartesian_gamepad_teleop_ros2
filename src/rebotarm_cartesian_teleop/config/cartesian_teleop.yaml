@@ -1,0 +1,143 @@
+# Cartesian teleop parameters — single stable config (sim / RViz).
+# Section keys map to ROS 2 node namespaces below.
+
+# --- input_mapping (joy_cartesian_mapper) ---
+# Joystick axes, deadzone, deadman, speed scale, velocity smoothing, base-jog input.
+joy_cartesian_mapper:
+  ros__parameters:
+    joy_topic: /joy
+    cartesian_jog_cmd_topic: /rebotarm/cartesian_jog_cmd
+
+    axis_x: 1
+    axis_y: 0
+    axis_z: 5
+
+    invert_x: false
+    invert_y: false
+    invert_z: false
+
+    deadzone: 0.15
+    joy_timeout_s: 0.3
+    max_linear_velocity_m_s: 0.06
+
+    deadman_button: 4
+    soft_stop_button: 2
+    speed_boost_button: 5
+
+    speed_scale_default: 1.0
+    speed_scale_boost: 2.5
+
+    enable_velocity_smoothing: true
+    max_linear_accel_m_s2: 0.25
+    velocity_smoothing_reset_on_deadman_release: true
+    velocity_smoothing_reset_on_soft_stop: true
+
+    enable_base_joint_jog: true
+    enable_local_teleop_window: true
+    base_jog_input_type: axis
+    base_jog_axis_index: 6
+    base_jog_axis_deadzone: 0.5
+    base_jog_axis_to_joint_sign: -1.0
+    base_joint_jog_speed_rad_s: 0.5
+
+# --- teleop_geometry (cartesian_jog_core) ---
+# Workspace bounds, local-window limits, initial pose, FK/IK frame, seed configuration.
+cartesian_jog_core:
+  ros__parameters:
+    cartesian_jog_cmd_topic: /rebotarm/cartesian_jog_cmd
+    cartesian_jog_state_topic: /rebotarm/cartesian_jog_state
+
+    initial_x: 0.30
+    initial_y: 0.00
+    initial_z: 0.20
+
+    workspace_x_min: 0.150
+    workspace_x_max: 0.450
+    workspace_y_min: -0.250
+    workspace_y_max: 0.250
+    workspace_z_min: 0.020
+    workspace_z_max: 0.450
+
+    enable_local_teleop_window: true
+    enable_base_joint_jog: true
+    local_window_x_min_m: -0.12
+    local_window_x_max_m: 0.18
+    local_window_y_min_m: -0.25
+    local_window_y_max_m: 0.25
+    local_window_z_min_m: -0.25
+    local_window_z_max_m: 0.18
+    global_z_min_m: 0.020
+    global_z_max_m: 0.450
+    base_joint_jog_speed_rad_s: 0.5
+
+    urdf_path: ""
+    ee_frame: end_link
+    initial_q: [0.0, -0.3, -0.3, 0.0, 0.0, 0.0]
+
+    # --- ik_and_safety (cartesian_jog_core) ---
+    ik_max_iterations: 100
+    ik_tolerance: 0.001
+    # ik_task_mode: full_6d
+    ik_task_mode: position_only
+    max_ik_error: 0.005
+    max_joint_delta_rad: 0.25
+
+    enable_joint1_anchor_hard_gate: true
+    enable_joint1_global_operational_cap: true
+    joint1_global_operational_min_rad: -1.60
+    joint1_global_operational_max_rad: 1.60
+    joint1_large_delta_from_anchor_rad: 0.15
+
+    ik_no_effect_candidate_step_min_m: 0.0005
+    ik_no_effect_reached_step_min_m: 0.0001
+    ik_no_effect_q_step_min_norm: 1.0e-6
+
+    # --- diagnostics (cartesian_jog_core) ---
+    ik_failure_log_interval_s: 1.0
+    candidate_drift_log_threshold_m: 0.001
+    joint_limit_warn_margin_rad: 0.35
+    joint_limit_reject_margin_rad: 0.05
+    joint5_warn_abs_rad: 1.0
+    joint4_warn_abs_rad: 1.0
+    q_delta_warn_rad: 0.15
+    candidate_drift_warn_m: 0.003
+    reached_step_warn_min_m: 0.0001
+    ik_quality_log_interval_s: 1.0
+    enable_cartesian_joint1_window_diagnostics: true
+    cartesian_joint1_window_warning_rad: 0.25
+    cartesian_joint1_window_hard_rad: 1.20
+
+    # --- output_and_sim (cartesian_jog_core) ---
+    output_mode: dry_run
+    dry_run: true
+    command_timeout_s: 0.3
+    servo_hz: 50.0
+    publish_fake_joint_states: true
+    fake_joint_states_topic: /rebotarm/fake_joint_states
+    fake_joint_state_hz: 50.0
+
+# --- visualization (teleop_viz_markers) ---
+teleop_viz_markers:
+  ros__parameters:
+    cartesian_jog_state_topic: /rebotarm/cartesian_jog_state
+    markers_topic: /rebotarm/teleop_viz/markers
+    fixed_frame: base_link
+    axis_length_m: 0.04
+    axis_line_width_m: 0.0025
+    sphere_diameter_m: 0.008
+
+# --- visualization (teleop_validation_targets) ---
+teleop_validation_targets:
+  ros__parameters:
+    cartesian_jog_state_topic: /rebotarm/cartesian_jog_state
+    markers_topic: /rebotarm/teleop_viz/validation_targets
+    fixed_frame: base_link
+    validation_targets_enabled: true
+    validation_target_radius_m: 0.015
+    validation_target_persistent_hit: false
+    # Flat [x, y, z, ...] positions in fixed_frame (base_link).
+    validation_targets: [
+      0.24, -0.16, 0.22,  0.24,  0.16, 0.22,  0.34, -0.16, 0.22,  0.34,  0.16, 0.22,
+      0.44,  0.00, 0.22,  0.28,  0.00, 0.10,  0.38, -0.10, 0.10,  0.38,  0.10, 0.10,
+      0.30, -0.10, 0.34,  0.30,  0.10, 0.34,  0.40,  0.00, 0.34,  0.44,  0.00, 0.14,
+    ]
