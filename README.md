@@ -3,7 +3,9 @@
 > Simulation-first Cartesian gamepad teleop for **reBot Arm B601-DM** — local-window
 > TCP jog, joint1 base control, and RViz reach validation.
 
+[![CI](https://github.com/danieldoradotalaveron-rb/rebotarm_cartesian_gamepad_teleop_ros2/actions/workflows/ci.yml/badge.svg)](https://github.com/danieldoradotalaveron-rb/rebotarm_cartesian_gamepad_teleop_ros2/actions/workflows/ci.yml)
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy-22314E?logo=ros&logoColor=white)](https://docs.ros.org/en/jazzy/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Driver](https://img.shields.io/badge/driver-Seeed%20reBotArm-8A2BE2)](https://github.com/Seeed-Projects/reBotArmController_ROS2)
 
