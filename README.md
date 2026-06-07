@@ -84,10 +84,10 @@ rebotarm_cartesian_gamepad_teleop_ros2/
 cd src/rebotarm_cartesian_teleop
 source /opt/ros/jazzy/setup.bash
 export PYTHONPATH="${PWD}:${PWD}/rebotarm_cartesian_teleop${PYTHONPATH:+:${PYTHONPATH}}"
-python3 -m pytest test/unit -q   # includes test_ik_gate_sequence (gate ordering)
+python3 -m pytest test/unit -q
 ```
 
-**Integration tests** (driver fork, SDK, bringup, FK/IK) live in the driver fork
+**Integration tests** (driver fork, SDK, bringup, FK/IK, post-IK gate ordering) live in the driver fork
 at `integration/rebotarm_cartesian_teleop/test/`. With driver + overlay built:
 
 ```bash
