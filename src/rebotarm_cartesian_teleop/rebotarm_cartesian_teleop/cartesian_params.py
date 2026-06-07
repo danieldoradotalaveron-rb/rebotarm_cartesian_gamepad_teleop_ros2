@@ -5,20 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from .ik_quality_diagnostics import IkQualityLogConfig, resolve_joint1_warning_window_rad
-from .jog_core_logic import (
-    IkConfig,
-    IkNoEffectConfig,
-    Joint1AnchorWindowConfig,
-    Joint1GlobalOperationalLimitConfig,
-    JointLimitRejectConfig,
-    LocalWindowLimits,
-    WorkspaceLimits,
-    parse_ik_task_mode,
-)
-
 if TYPE_CHECKING:
     from rclpy.node import Node
+
+    from .ik_quality_diagnostics import IkQualityLogConfig
+    from .jog_core_logic import (
+        IkConfig,
+        IkNoEffectConfig,
+        Joint1AnchorWindowConfig,
+        Joint1GlobalOperationalLimitConfig,
+        JointLimitRejectConfig,
+        LocalWindowLimits,
+        WorkspaceLimits,
+    )
 
 
 CARTESIAN_CORE_PARAMETER_DEFAULTS: dict[str, object] = {
@@ -158,6 +157,18 @@ def declare_cartesian_core_parameters(node: Node) -> None:
 
 
 def load_cartesian_core_params(node: Node) -> CartesianCoreParamsBundle:
+    from .ik_quality_diagnostics import IkQualityLogConfig, resolve_joint1_warning_window_rad
+    from .jog_core_logic import (
+        IkConfig,
+        IkNoEffectConfig,
+        Joint1AnchorWindowConfig,
+        Joint1GlobalOperationalLimitConfig,
+        JointLimitRejectConfig,
+        LocalWindowLimits,
+        WorkspaceLimits,
+        parse_ik_task_mode,
+    )
+
     declare_cartesian_core_parameters(node)
 
     cmd_topic = node.get_parameter("cartesian_jog_cmd_topic").value

@@ -45,8 +45,9 @@ remain inside `solve_target_ik` before this sequence.
 
 **Tests:** gate ordering in driver fork
 `integration/rebotarm_cartesian_teleop/test/test_ik_gate_sequence.py`.
-Individual joint1 gate helpers: `test_joint1_gates.py`. Parameter loading (unit):
-`test/unit/test_cartesian_params.py`.
+Individual joint1 gate helpers: `test_joint1_gates.py`. Parameter declare (unit):
+`test/unit/test_cartesian_params.py`; full load path (integration):
+`integration/rebotarm_cartesian_teleop/test/test_cartesian_params.py`.
 
 ## Config section ownership
 
