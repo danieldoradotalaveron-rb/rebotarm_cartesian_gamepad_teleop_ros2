@@ -6,6 +6,7 @@ from rclpy.node import Node
 from rebotarm_msgs.msg import CartesianJogCmd, CartesianJogState
 from sensor_msgs.msg import JointState
 
+from .cartesian_params import load_cartesian_core_params
 from .fake_joint_state import build_fake_joint_state
 from .fk_kinematics import (
     FkContext,
@@ -14,7 +15,6 @@ from .fk_kinematics import (
 )
 from .ik_kinematics import compute_ik_for_pose, compute_ik_for_position
 from .ik_quality_diagnostics import (
-    IkQualityLogConfig,
     LocalWindowDiagnostics,
     LocalWindowLimitsView,
     _global_cap_error_rad,
@@ -27,23 +27,15 @@ from .ik_quality_diagnostics import (
     joint_limits_from_model,
     joint_names_from_model,
     pos3_from_pose,
-    resolve_joint1_warning_window_rad,
     should_log_ik_quality_diagnostics,
     with_log_reasons,
 )
 from .jog_core_logic import (
     COMMAND_FRAME_LOCAL_WINDOW,
     BaseJogResult,
-    IkConfig,
     IkGateSequenceInput,
     IkGateSequenceResult,
-    IkNoEffectConfig,
-    Joint1AnchorWindowConfig,
-    Joint1GlobalOperationalLimitConfig,
-    JointLimitRejectConfig,
-    LocalWindowLimits,
     LocalWindowState,
-    WorkspaceLimits,
     apply_base_joint1_jog,
     apply_ik_gate_sequence,
     build_cartesian_jog_state,
@@ -58,7 +50,6 @@ from .jog_core_logic import (
     format_joint_near_limit_log,
     integrate_local_target_offset,
     integrate_local_window_candidate,
-    parse_ik_task_mode,
     reanchor_local_window_from_fk,
     resync_committed_from_q_sim,
     solve_target_ik,
@@ -70,109 +61,27 @@ class CartesianJogCore(Node):
     def __init__(self):
         super().__init__("cartesian_jog_core")
 
-        self.declare_parameter("cartesian_jog_cmd_topic", "/rebotarm/cartesian_jog_cmd")
-        self.declare_parameter("cartesian_jog_state_topic", "/rebotarm/cartesian_jog_state")
-        self.declare_parameter("output_mode", "dry_run")
-        self.declare_parameter("dry_run", True)
-        self.declare_parameter("command_timeout_s", 0.3)
-        self.declare_parameter("servo_hz", 50.0)
+        params = load_cartesian_core_params(self)
 
-        self.declare_parameter("initial_x", 0.30)
-        self.declare_parameter("initial_y", 0.00)
-        self.declare_parameter("initial_z", 0.20)
+        cmd_topic = params.core.cmd_topic
+        state_topic = params.core.state_topic
 
-        self.declare_parameter("workspace_x_min", 0.150)
-        self.declare_parameter("workspace_x_max", 0.450)
-        self.declare_parameter("workspace_y_min", -0.250)
-        self.declare_parameter("workspace_y_max", 0.250)
-        self.declare_parameter("workspace_z_min", 0.020)
-        self.declare_parameter("workspace_z_max", 0.450)
-        self.declare_parameter("enable_local_teleop_window", True)
-        self.declare_parameter("enable_base_joint_jog", True)
-        self.declare_parameter("local_window_x_min_m", -0.12)
-        self.declare_parameter("local_window_x_max_m", 0.18)
-        self.declare_parameter("local_window_y_min_m", -0.25)
-        self.declare_parameter("local_window_y_max_m", 0.25)
-        self.declare_parameter("local_window_z_min_m", -0.25)
-        self.declare_parameter("local_window_z_max_m", 0.18)
-        self.declare_parameter("global_z_min_m", 0.020)
-        self.declare_parameter("global_z_max_m", 0.450)
-        self.declare_parameter("base_joint_jog_speed_rad_s", 0.5)
+        self.output_mode = params.core.output_mode
+        self.dry_run = params.core.dry_run
+        self.command_timeout_s = params.core.command_timeout_s
+        self.servo_hz = params.core.servo_hz
 
-        self.declare_parameter("urdf_path", "")
-        self.declare_parameter("ee_frame", "end_link")
-        self.declare_parameter("initial_q", [0.0, -0.3, -0.3, 0.0, 0.0, 0.0])
-
-        self.declare_parameter("ik_max_iterations", 100)
-        self.declare_parameter("ik_tolerance", 0.001)
-        self.declare_parameter("ik_task_mode", "position_only")
-        self.declare_parameter("max_ik_error", 0.005)
-        self.declare_parameter("max_joint_delta_rad", 0.25)
-        self.declare_parameter("ik_failure_log_interval_s", 1.0)
-        self.declare_parameter("candidate_drift_log_threshold_m", 0.001)
-        self.declare_parameter("joint_limit_warn_margin_rad", 0.35)
-        self.declare_parameter("joint_limit_reject_margin_rad", 0.05)
-        self.declare_parameter("joint5_warn_abs_rad", 1.0)
-        self.declare_parameter("joint4_warn_abs_rad", 1.0)
-        self.declare_parameter("q_delta_warn_rad", 0.15)
-        self.declare_parameter("candidate_drift_warn_m", 0.003)
-        self.declare_parameter("reached_step_warn_min_m", 0.0001)
-        self.declare_parameter("ik_quality_log_interval_s", 1.0)
-        self.declare_parameter("enable_cartesian_joint1_window_diagnostics", True)
-        self.declare_parameter("cartesian_joint1_window_warning_rad", 0.25)
-        self.declare_parameter("cartesian_joint1_window_hard_rad", 1.20)
-        self.declare_parameter("cartesian_joint1_window_rad", 0.25)
-        self.declare_parameter("enable_joint1_anchor_hard_gate", True)
-        self.declare_parameter("enable_joint1_global_operational_cap", True)
-        self.declare_parameter("joint1_global_operational_min_rad", -1.60)
-        self.declare_parameter("joint1_global_operational_max_rad", 1.60)
-        self.declare_parameter("joint1_large_delta_from_anchor_rad", 0.15)
-        self.declare_parameter("ik_no_effect_candidate_step_min_m", 0.0005)
-        self.declare_parameter("ik_no_effect_reached_step_min_m", 0.0001)
-        self.declare_parameter("ik_no_effect_q_step_min_norm", 1.0e-6)
-        self.declare_parameter("publish_fake_joint_states", True)
-        self.declare_parameter("fake_joint_states_topic", "/rebotarm/fake_joint_states")
-        self.declare_parameter("fake_joint_state_hz", 50.0)
-
-        cmd_topic = self.get_parameter("cartesian_jog_cmd_topic").value
-        state_topic = self.get_parameter("cartesian_jog_state_topic").value
-
-        self.output_mode = self.get_parameter("output_mode").value
-        self.dry_run = bool(self.get_parameter("dry_run").value)
-        self.command_timeout_s = float(self.get_parameter("command_timeout_s").value)
-        self.servo_hz = float(self.get_parameter("servo_hz").value)
-
-        self._workspace = WorkspaceLimits(
-            x_min=float(self.get_parameter("workspace_x_min").value),
-            x_max=float(self.get_parameter("workspace_x_max").value),
-            y_min=float(self.get_parameter("workspace_y_min").value),
-            y_max=float(self.get_parameter("workspace_y_max").value),
-            z_min=float(self.get_parameter("workspace_z_min").value),
-            z_max=float(self.get_parameter("workspace_z_max").value),
-        )
-        self._enable_local_teleop_window = bool(
-            self.get_parameter("enable_local_teleop_window").value
-        )
-        self._enable_base_joint_jog = bool(self.get_parameter("enable_base_joint_jog").value)
-        self._base_joint_jog_speed_rad_s = float(
-            self.get_parameter("base_joint_jog_speed_rad_s").value
-        )
-        self._local_window_limits = LocalWindowLimits(
-            x_min=float(self.get_parameter("local_window_x_min_m").value),
-            x_max=float(self.get_parameter("local_window_x_max_m").value),
-            y_min=float(self.get_parameter("local_window_y_min_m").value),
-            y_max=float(self.get_parameter("local_window_y_max_m").value),
-            z_min=float(self.get_parameter("local_window_z_min_m").value),
-            z_max=float(self.get_parameter("local_window_z_max_m").value),
-            global_z_min=float(self.get_parameter("global_z_min_m").value),
-            global_z_max=float(self.get_parameter("global_z_max_m").value),
-        )
+        self._workspace = params.geometry.workspace
+        self._enable_local_teleop_window = params.geometry.enable_local_teleop_window
+        self._enable_base_joint_jog = params.base_jog.enable_base_joint_jog
+        self._base_joint_jog_speed_rad_s = params.base_jog.base_joint_jog_speed_rad_s
+        self._local_window_limits = params.geometry.local_window_limits
         self._teleop_mode = "cartesian"
         self._last_base_jog_result: BaseJogResult | None = None
 
-        urdf_path = str(self.get_parameter("urdf_path").value)
-        ee_frame = str(self.get_parameter("ee_frame").value)
-        initial_q = [float(v) for v in self.get_parameter("initial_q").value]
+        urdf_path = params.geometry.urdf_path
+        ee_frame = params.core.ee_frame
+        initial_q = params.geometry.initial_q
         self._initial_q = np.asarray(initial_q, dtype=np.float64)
 
         self._fk: FkContext = init_fk_context(urdf_path, ee_frame, initial_q)
@@ -200,12 +109,9 @@ class CartesianJogCore(Node):
             fk_init_err,
         ) = resync_committed_from_q_sim(self._fk, self._q_sim)
         if fk_init_err:
-            fallback_x = float(self.get_parameter("initial_x").value)
-            fallback_y = float(self.get_parameter("initial_y").value)
-            fallback_z = float(self.get_parameter("initial_z").value)
-            self.committed_target_x = fallback_x
-            self.committed_target_y = fallback_y
-            self.committed_target_z = fallback_z
+            self.committed_target_x = params.geometry.initial_x
+            self.committed_target_y = params.geometry.initial_y
+            self.committed_target_z = params.geometry.initial_z
             self.get_logger().warn(
                 f"FK(q_sim) init failed ({fk_init_err}); using YAML fallback target"
             )
@@ -221,75 +127,14 @@ class CartesianJogCore(Node):
         self.last_tick_time_ns = self.get_clock().now().nanoseconds
         self.last_clamp_reason = ""
         self._fk_tick_error = ""
-        self._ik_failure_log_interval_s = float(
-            self.get_parameter("ik_failure_log_interval_s").value
-        )
-        self._candidate_drift_log_threshold_m = float(
-            self.get_parameter("candidate_drift_log_threshold_m").value
-        )
-        self._ik_quality_log_config = IkQualityLogConfig(
-            joint_limit_warn_margin_rad=float(
-                self.get_parameter("joint_limit_warn_margin_rad").value
-            ),
-            joint5_warn_abs_rad=float(self.get_parameter("joint5_warn_abs_rad").value),
-            joint4_warn_abs_rad=float(self.get_parameter("joint4_warn_abs_rad").value),
-            q_delta_warn_rad=float(self.get_parameter("q_delta_warn_rad").value),
-            candidate_drift_warn_m=float(self.get_parameter("candidate_drift_warn_m").value),
-            reached_step_warn_min_m=float(self.get_parameter("reached_step_warn_min_m").value),
-            enable_cartesian_joint1_window_diagnostics=bool(
-                self.get_parameter("enable_cartesian_joint1_window_diagnostics").value
-            ),
-            cartesian_joint1_window_warning_rad=resolve_joint1_warning_window_rad(
-                warning_rad=float(
-                    self.get_parameter("cartesian_joint1_window_warning_rad").value
-                ),
-                legacy_window_rad=float(
-                    self.get_parameter("cartesian_joint1_window_rad").value
-                ),
-            ),
-            cartesian_joint1_window_hard_rad=float(
-                self.get_parameter("cartesian_joint1_window_hard_rad").value
-            ),
-            enable_joint1_anchor_hard_gate=bool(
-                self.get_parameter("enable_joint1_anchor_hard_gate").value
-            ),
-            enable_joint1_global_operational_cap=bool(
-                self.get_parameter("enable_joint1_global_operational_cap").value
-            ),
-            joint1_global_operational_min_rad=float(
-                self.get_parameter("joint1_global_operational_min_rad").value
-            ),
-            joint1_global_operational_max_rad=float(
-                self.get_parameter("joint1_global_operational_max_rad").value
-            ),
-            joint1_large_delta_from_anchor_rad=float(
-                self.get_parameter("joint1_large_delta_from_anchor_rad").value
-            ),
-        )
-        self._ik_quality_log_interval_s = float(
-            self.get_parameter("ik_quality_log_interval_s").value
-        )
-        self._ik_no_effect_config = IkNoEffectConfig(
-            candidate_step_min_m=float(
-                self.get_parameter("ik_no_effect_candidate_step_min_m").value
-            ),
-            reached_step_min_m=float(
-                self.get_parameter("ik_no_effect_reached_step_min_m").value
-            ),
-            q_step_min_norm=float(self.get_parameter("ik_no_effect_q_step_min_norm").value),
-        )
-        self._joint_limit_reject_config = JointLimitRejectConfig(
-            reject_margin_rad=float(self.get_parameter("joint_limit_reject_margin_rad").value),
-        )
-        self._joint1_global_cap_config = Joint1GlobalOperationalLimitConfig(
-            enabled=self._ik_quality_log_config.enable_joint1_global_operational_cap,
-            min_rad=self._ik_quality_log_config.joint1_global_operational_min_rad,
-            max_rad=self._ik_quality_log_config.joint1_global_operational_max_rad,
-        )
-        self._joint1_anchor_window_config = Joint1AnchorWindowConfig(
-            enabled=self._ik_quality_log_config.enable_joint1_anchor_hard_gate,
-            hard_window_rad=self._ik_quality_log_config.cartesian_joint1_window_hard_rad,
-        )
+        self._ik_failure_log_interval_s = params.ik.ik_failure_log_interval_s
+        self._candidate_drift_log_threshold_m = params.ik.candidate_drift_log_threshold_m
+        self._ik_quality_log_config = params.diagnostics.ik_quality_log_config
+        self._ik_quality_log_interval_s = params.diagnostics.ik_quality_log_interval_s
+        self._ik_no_effect_config = params.safety.ik_no_effect_config
+        self._joint_limit_reject_config = params.safety.joint_limit_reject_config
+        self._joint1_global_cap_config = params.safety.joint1_global_cap_config
+        self._joint1_anchor_window_config = params.safety.joint1_anchor_window_config
         self._last_ik_failure_log_ns = 0
         self._last_ik_quality_log_ns = 0
         self._prev_deadman_pressed = False
@@ -318,21 +163,12 @@ class CartesianJogCore(Node):
         )
         self._reanchor_local_window_from_q_sim()
 
-        self._publish_fake_joint_states = bool(
-            self.get_parameter("publish_fake_joint_states").value
-        )
-        fake_joint_states_topic = str(self.get_parameter("fake_joint_states_topic").value)
-        self._fake_joint_state_hz = float(self.get_parameter("fake_joint_state_hz").value)
+        self._publish_fake_joint_states = params.output.publish_fake_joint_states
+        fake_joint_states_topic = params.output.fake_joint_states_topic
+        self._fake_joint_state_hz = params.output.fake_joint_state_hz
         self._last_valid_fake_q: list[float] = [float(v) for v in self._q_sim]
 
-        ik_task_mode = parse_ik_task_mode(str(self.get_parameter("ik_task_mode").value))
-        self._ik_config = IkConfig(
-            max_iterations=int(self.get_parameter("ik_max_iterations").value),
-            tolerance=float(self.get_parameter("ik_tolerance").value),
-            max_ik_error=float(self.get_parameter("max_ik_error").value),
-            max_joint_delta_rad=float(self.get_parameter("max_joint_delta_rad").value),
-            task_mode=ik_task_mode,
-        )
+        self._ik_config = params.ik.ik_config
 
         self.subscription = self.create_subscription(
             CartesianJogCmd,

@@ -27,7 +27,8 @@ Teleop nodes load `config/cartesian_teleop.yaml`. TF/URDF launches load
 |--------|------|
 | `joy_mapping.py` | Pure Joy → `CartesianJogCmd` |
 | `jog_core_logic.py` | State machine, local window, base jog, IK orchestration, **post-IK gate sequence** |
-| `cartesian_jog_core.py` | ROS shell: params, topics, timers, logging, `tick()` orchestration |
+| `cartesian_params.py` | ROS parameter declare/load → typed config bundle |
+| `cartesian_jog_core.py` | ROS shell: topics, timers, logging, `tick()` orchestration |
 | `fk_kinematics.py` / `ik_kinematics.py` | FK/IK adapters over SDK |
 | `fake_joint_state.py` | Fake `JointState` builder |
 
@@ -42,8 +43,10 @@ Post-IK safety gates run in fixed order via `apply_ik_gate_sequence()` in
 First failing gate wins. Solver-level rejections (`JOINT_DELTA_TOO_LARGE`, `IK_ERROR_TOO_HIGH`)
 remain inside `solve_target_ik` before this sequence.
 
-Unit tests: `test/unit/test_ik_gate_sequence.py`. Integration mirror in driver fork
+**Tests:** gate ordering in driver fork
 `integration/rebotarm_cartesian_teleop/test/test_ik_gate_sequence.py`.
+Individual joint1 gate helpers: `test_joint1_gates.py`. Parameter loading (unit):
+`test/unit/test_cartesian_params.py`.
 
 ## Config section ownership
 
