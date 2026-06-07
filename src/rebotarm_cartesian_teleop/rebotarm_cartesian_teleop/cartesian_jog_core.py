@@ -35,6 +35,8 @@ from .jog_core_logic import (
     COMMAND_FRAME_LOCAL_WINDOW,
     BaseJogResult,
     IkConfig,
+    IkGateSequenceInput,
+    IkGateSequenceResult,
     IkNoEffectConfig,
     Joint1AnchorWindowConfig,
     Joint1GlobalOperationalLimitConfig,
@@ -43,6 +45,7 @@ from .jog_core_logic import (
     LocalWindowState,
     WorkspaceLimits,
     apply_base_joint1_jog,
+    apply_ik_gate_sequence,
     build_cartesian_jog_state,
     build_committed_target_pose,
     compute_candidate_drift_m,
@@ -57,10 +60,6 @@ from .jog_core_logic import (
     integrate_local_window_candidate,
     parse_ik_task_mode,
     reanchor_local_window_from_fk,
-    reject_ik_if_joint1_anchor_window,
-    reject_ik_if_joint1_global_operational_limit,
-    reject_ik_if_near_joint_limit,
-    reject_ik_if_no_effect,
     resync_committed_from_q_sim,
     solve_target_ik,
     update_q_sim_on_ik_success,
@@ -752,6 +751,68 @@ class CartesianJogCore(Node):
             )
         return float(ik_result.error)
 
+    def _log_post_ik_gate_rejection(
+        self,
+        gate_result: IkGateSequenceResult,
+        *,
+        q_before_ik: np.ndarray,
+        fk_position_before: tuple[float, float, float],
+        candidate_x: float,
+        candidate_y: float,
+        candidate_z: float,
+        raw_candidate_x: float,
+        raw_candidate_y: float,
+        raw_candidate_z: float,
+        now_ns: int,
+        sim_rotation: np.ndarray | None,
+        workspace_clamp_active: bool,
+        workspace_clamped_axes: tuple[str, ...],
+    ) -> None:
+        if gate_result.global_cap_info is not None:
+            self._maybe_log_ik_rejection(
+                format_joint1_global_operational_limit_log(gate_result.global_cap_info),
+                now_ns,
+            )
+        elif gate_result.anchor_info is not None:
+            self._maybe_log_ik_rejection(
+                format_joint1_anchor_window_log(gate_result.anchor_info),
+                now_ns,
+            )
+        elif gate_result.joint_limit_info is not None:
+            self._maybe_log_joint_near_limit(gate_result.joint_limit_info, now_ns)
+
+        self._maybe_log_ik_quality(
+            q_before=q_before_ik,
+            q_target=np.asarray(q_before_ik, dtype=np.float64),
+            fk_position_before=fk_position_before,
+            fk_position_target=fk_position_before,
+            candidate_x=candidate_x,
+            candidate_y=candidate_y,
+            candidate_z=candidate_z,
+            candidate_drift_m=0.0,
+            now_ns=now_ns,
+            ik_failure=True,
+            q_candidate_from_ik=gate_result.q_from_ik,
+            rejection_source=gate_result.rejection_source,
+            ik_accepted=False,
+            raw_candidate_position=(
+                raw_candidate_x,
+                raw_candidate_y,
+                raw_candidate_z,
+            ),
+            workspace_clamp_active=workspace_clamp_active,
+            workspace_clamped_axes=workspace_clamped_axes,
+            resolve_ik_error=lambda: self._resolve_ik_error_for_log(
+                ik_failure=True,
+                ik_failure_diag=None,
+                candidate_x=candidate_x,
+                candidate_y=candidate_y,
+                candidate_z=candidate_z,
+                sim_rotation=sim_rotation,
+                q_seed=q_before_ik,
+            ),
+        )
+
     def _publish_fake_joint_state(self) -> None:
         if self._fake_joint_states_publisher is None:
             return
@@ -971,179 +1032,45 @@ class CartesianJogCore(Node):
                 )
 
         if ik_success:
-            q_from_ik = list(q_target)
-            q_target, ik_success, ik_reason, global_cap_info = (
-                reject_ik_if_joint1_global_operational_limit(
-                    q_target,
-                    self._joint_names,
-                    self._joint1_global_cap_config,
-                )
-            )
-            if not ik_success:
-                self._maybe_log_ik_rejection(
-                    format_joint1_global_operational_limit_log(global_cap_info),
-                    now_ns,
-                )
-                self._maybe_log_ik_quality(
+            gate_result = apply_ik_gate_sequence(
+                IkGateSequenceInput(
+                    fk_ctx=self._fk,
+                    q_candidate=list(q_target),
                     q_before=q_before_ik,
-                    q_target=np.asarray(q_before_ik, dtype=np.float64),
-                    fk_position_before=fk_position_before,
-                    fk_position_target=fk_position_before,
+                    joint_names=self._joint_names,
+                    lower_limits=self._joint_lower_limits,
+                    upper_limits=self._joint_upper_limits,
+                    base_anchor_q=self._base_anchor_q,
                     candidate_x=candidate_x,
                     candidate_y=candidate_y,
                     candidate_z=candidate_z,
-                    candidate_drift_m=0.0,
-                    now_ns=now_ns,
-                    ik_failure=True,
-                    q_candidate_from_ik=q_from_ik,
-                    rejection_source="JOINT1_GLOBAL_OPERATIONAL_LIMIT",
-                    ik_accepted=False,
-                    raw_candidate_position=(
-                        raw_candidate_x,
-                        raw_candidate_y,
-                        raw_candidate_z,
-                    ),
-                    workspace_clamp_active=workspace_clamp_active,
-                    workspace_clamped_axes=workspace_clamped_axes,
-                    resolve_ik_error=lambda: self._resolve_ik_error_for_log(
-                        ik_failure=True,
-                        ik_failure_diag=None,
-                        candidate_x=candidate_x,
-                        candidate_y=candidate_y,
-                        candidate_z=candidate_z,
-                        sim_rotation=sim_rotation,
-                        q_seed=q_before_ik,
-                    ),
-                )
-
-        if ik_success:
-            q_from_ik = list(q_target)
-            q_target, ik_success, ik_reason, anchor_info = reject_ik_if_joint1_anchor_window(
-                q_target,
-                self._joint_names,
-                self._base_anchor_q,
-                self._joint1_anchor_window_config,
-            )
-            if not ik_success:
-                self._maybe_log_ik_rejection(format_joint1_anchor_window_log(anchor_info), now_ns)
-                self._maybe_log_ik_quality(
-                    q_before=q_before_ik,
-                    q_target=np.asarray(q_before_ik, dtype=np.float64),
                     fk_position_before=fk_position_before,
-                    fk_position_target=fk_position_before,
+                    joint1_global_config=self._joint1_global_cap_config,
+                    joint1_anchor_config=self._joint1_anchor_window_config,
+                    joint_limit_config=self._joint_limit_reject_config,
+                    ik_no_effect_config=self._ik_no_effect_config,
+                )
+            )
+            if gate_result.accepted:
+                q_target = gate_result.q_candidate
+            else:
+                ik_success = False
+                ik_reason = gate_result.rejection_reason
+                q_target = gate_result.q_candidate
+                self._log_post_ik_gate_rejection(
+                    gate_result,
+                    q_before_ik=q_before_ik,
+                    fk_position_before=fk_position_before,
                     candidate_x=candidate_x,
                     candidate_y=candidate_y,
                     candidate_z=candidate_z,
-                    candidate_drift_m=0.0,
+                    raw_candidate_x=raw_candidate_x,
+                    raw_candidate_y=raw_candidate_y,
+                    raw_candidate_z=raw_candidate_z,
                     now_ns=now_ns,
-                    ik_failure=True,
-                    q_candidate_from_ik=q_from_ik,
-                    rejection_source="JOINT1_ANCHOR_WINDOW",
-                    ik_accepted=False,
-                    raw_candidate_position=(
-                        raw_candidate_x,
-                        raw_candidate_y,
-                        raw_candidate_z,
-                    ),
+                    sim_rotation=sim_rotation,
                     workspace_clamp_active=workspace_clamp_active,
                     workspace_clamped_axes=workspace_clamped_axes,
-                    resolve_ik_error=lambda: self._resolve_ik_error_for_log(
-                        ik_failure=True,
-                        ik_failure_diag=None,
-                        candidate_x=candidate_x,
-                        candidate_y=candidate_y,
-                        candidate_z=candidate_z,
-                        sim_rotation=sim_rotation,
-                        q_seed=q_before_ik,
-                    ),
-                )
-
-        if ik_success:
-            q_from_ik = list(q_target)
-            q_target, ik_success, ik_reason, joint_limit_info = reject_ik_if_near_joint_limit(
-                q_target,
-                self._joint_names,
-                self._joint_lower_limits,
-                self._joint_upper_limits,
-                self._joint_limit_reject_config,
-            )
-            if not ik_success:
-                self._maybe_log_joint_near_limit(joint_limit_info, now_ns)
-                self._maybe_log_ik_quality(
-                    q_before=q_before_ik,
-                    q_target=np.asarray(q_before_ik, dtype=np.float64),
-                    fk_position_before=fk_position_before,
-                    fk_position_target=fk_position_before,
-                    candidate_x=candidate_x,
-                    candidate_y=candidate_y,
-                    candidate_z=candidate_z,
-                    candidate_drift_m=0.0,
-                    now_ns=now_ns,
-                    ik_failure=True,
-                    q_candidate_from_ik=q_from_ik,
-                    rejection_source="JOINT_NEAR_LIMIT",
-                    ik_accepted=False,
-                    raw_candidate_position=(
-                        raw_candidate_x,
-                        raw_candidate_y,
-                        raw_candidate_z,
-                    ),
-                    workspace_clamp_active=workspace_clamp_active,
-                    workspace_clamped_axes=workspace_clamped_axes,
-                    resolve_ik_error=lambda: self._resolve_ik_error_for_log(
-                        ik_failure=True,
-                        ik_failure_diag=None,
-                        candidate_x=candidate_x,
-                        candidate_y=candidate_y,
-                        candidate_z=candidate_z,
-                        sim_rotation=sim_rotation,
-                        q_seed=q_before_ik,
-                    ),
-                )
-
-        if ik_success:
-            q_from_ik = list(q_target)
-            q_target, ik_success, ik_reason, _ = reject_ik_if_no_effect(
-                self._fk,
-                q_before_ik,
-                q_target,
-                candidate_x,
-                candidate_y,
-                candidate_z,
-                self._ik_no_effect_config,
-                fk_position_before=fk_position_before,
-            )
-            if not ik_success:
-                self._maybe_log_ik_quality(
-                    q_before=q_before_ik,
-                    q_target=q_before_ik,
-                    fk_position_before=fk_position_before,
-                    fk_position_target=fk_position_before,
-                    candidate_x=candidate_x,
-                    candidate_y=candidate_y,
-                    candidate_z=candidate_z,
-                    candidate_drift_m=0.0,
-                    now_ns=now_ns,
-                    ik_failure=True,
-                    q_candidate_from_ik=q_from_ik,
-                    rejection_source="IK_NO_EFFECT",
-                    ik_accepted=False,
-                    raw_candidate_position=(
-                        raw_candidate_x,
-                        raw_candidate_y,
-                        raw_candidate_z,
-                    ),
-                    workspace_clamp_active=workspace_clamp_active,
-                    workspace_clamped_axes=workspace_clamped_axes,
-                    resolve_ik_error=lambda: self._resolve_ik_error_for_log(
-                        ik_failure=True,
-                        ik_failure_diag=None,
-                        candidate_x=candidate_x,
-                        candidate_y=candidate_y,
-                        candidate_z=candidate_z,
-                        sim_rotation=sim_rotation,
-                        q_seed=q_before_ik,
-                    ),
                 )
 
         if ik_success:

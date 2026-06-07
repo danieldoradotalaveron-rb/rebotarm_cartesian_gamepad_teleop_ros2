@@ -884,6 +884,141 @@ def reject_ik_if_near_joint_limit(
     return candidate_q, True, "", None
 
 
+@dataclass(frozen=True)
+class IkGateSequenceInput:
+    """Inputs for post-IK safety gate sequence (pure, no ROS)."""
+
+    fk_ctx: FkContext
+    q_candidate: list[float]
+    q_before: np.ndarray
+    joint_names: list[str]
+    lower_limits: list[float]
+    upper_limits: list[float]
+    base_anchor_q: float
+    candidate_x: float
+    candidate_y: float
+    candidate_z: float
+    fk_position_before: tuple[float, float, float] | None
+    joint1_global_config: Joint1GlobalOperationalLimitConfig
+    joint1_anchor_config: Joint1AnchorWindowConfig
+    joint_limit_config: JointLimitRejectConfig
+    ik_no_effect_config: IkNoEffectConfig
+
+
+@dataclass(frozen=True)
+class IkGateSequenceResult:
+    """Outcome of post-IK gate sequence."""
+
+    accepted: bool
+    q_candidate: list[float]
+    rejection_reason: str
+    rejection_source: str
+    gate_name: str
+    global_cap_info: Joint1GlobalOperationalLimitInfo | None = None
+    anchor_info: Joint1AnchorWindowInfo | None = None
+    joint_limit_info: JointNearLimitInfo | None = None
+    no_effect_metrics: IkNoEffectMetrics | None = None
+    q_from_ik: list[float] | None = None
+
+
+def apply_ik_gate_sequence(inp: IkGateSequenceInput) -> IkGateSequenceResult:
+    """Apply post-IK gates in fixed order; first failure wins.
+
+    Order (must not change):
+    1. JOINT1_GLOBAL_OPERATIONAL_LIMIT
+    2. JOINT1_ANCHOR_WINDOW
+    3. JOINT_NEAR_LIMIT
+    4. IK_NO_EFFECT
+    """
+    q = list(inp.q_candidate)
+    q_from_ik = list(q)
+
+    q, ok, reason, global_cap_info = reject_ik_if_joint1_global_operational_limit(
+        q,
+        inp.joint_names,
+        inp.joint1_global_config,
+    )
+    if not ok:
+        return IkGateSequenceResult(
+            accepted=False,
+            q_candidate=[],
+            rejection_reason=reason,
+            rejection_source="JOINT1_GLOBAL_OPERATIONAL_LIMIT",
+            gate_name="JOINT1_GLOBAL_OPERATIONAL_LIMIT",
+            global_cap_info=global_cap_info,
+            q_from_ik=q_from_ik,
+        )
+
+    q_from_ik = list(q)
+    q, ok, reason, anchor_info = reject_ik_if_joint1_anchor_window(
+        q,
+        inp.joint_names,
+        inp.base_anchor_q,
+        inp.joint1_anchor_config,
+    )
+    if not ok:
+        return IkGateSequenceResult(
+            accepted=False,
+            q_candidate=[],
+            rejection_reason=reason,
+            rejection_source="JOINT1_ANCHOR_WINDOW",
+            gate_name="JOINT1_ANCHOR_WINDOW",
+            anchor_info=anchor_info,
+            q_from_ik=q_from_ik,
+        )
+
+    q_from_ik = list(q)
+    q, ok, reason, joint_limit_info = reject_ik_if_near_joint_limit(
+        q,
+        inp.joint_names,
+        inp.lower_limits,
+        inp.upper_limits,
+        inp.joint_limit_config,
+    )
+    if not ok:
+        return IkGateSequenceResult(
+            accepted=False,
+            q_candidate=[],
+            rejection_reason=reason,
+            rejection_source="JOINT_NEAR_LIMIT",
+            gate_name="JOINT_NEAR_LIMIT",
+            joint_limit_info=joint_limit_info,
+            q_from_ik=q_from_ik,
+        )
+
+    q_from_ik = list(q)
+    q, ok, reason, no_effect_metrics = reject_ik_if_no_effect(
+        inp.fk_ctx,
+        inp.q_before,
+        q,
+        inp.candidate_x,
+        inp.candidate_y,
+        inp.candidate_z,
+        inp.ik_no_effect_config,
+        fk_position_before=inp.fk_position_before,
+    )
+    if not ok:
+        return IkGateSequenceResult(
+            accepted=False,
+            q_candidate=[],
+            rejection_reason=reason,
+            rejection_source="IK_NO_EFFECT",
+            gate_name="IK_NO_EFFECT",
+            no_effect_metrics=no_effect_metrics,
+            q_from_ik=q_from_ik,
+        )
+
+    return IkGateSequenceResult(
+        accepted=True,
+        q_candidate=q,
+        rejection_reason="",
+        rejection_source="",
+        gate_name="",
+        no_effect_metrics=no_effect_metrics,
+        q_from_ik=None,
+    )
+
+
 def format_joint_near_limit_log(info: JointNearLimitInfo) -> str:
     return (
         "IK rejection: reason=JOINT_NEAR_LIMIT "

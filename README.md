@@ -71,7 +71,10 @@ rebotarm_cartesian_gamepad_teleop_ros2/
 ├── README.md
 ├── docs/hero.png
 └── src/rebotarm_cartesian_teleop/   # ament_python package
+    └── docs/TELEOP_CONFIG_AND_LAUNCHES.md
 ```
+
+**Architecture / config / launches:** [TELEOP_CONFIG_AND_LAUNCHES.md](src/rebotarm_cartesian_teleop/docs/TELEOP_CONFIG_AND_LAUNCHES.md)
 
 ## Testing
 
@@ -81,7 +84,7 @@ rebotarm_cartesian_gamepad_teleop_ros2/
 cd src/rebotarm_cartesian_teleop
 source /opt/ros/jazzy/setup.bash
 export PYTHONPATH="${PWD}:${PWD}/rebotarm_cartesian_teleop${PYTHONPATH:+:${PYTHONPATH}}"
-python3 -m pytest test/unit -q
+python3 -m pytest test/unit -q   # includes test_ik_gate_sequence (gate ordering)
 ```
 
 **Integration tests** (driver fork, SDK, bringup, FK/IK) live in the driver fork
